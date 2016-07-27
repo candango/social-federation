@@ -1,8 +1,10 @@
+# -*- coding: utf-8 -*-
 from random import shuffle
 import factory
 from factory import fuzzy
 
 from federation.entities.base import Post
+from federation.entities.diaspora.entities import DiasporaPost
 
 
 class GUIDMixinFactory(factory.Factory):
@@ -30,3 +32,8 @@ class TaggedPostFactory(PostFactory):
             parts.append("#%s" % tag)
         shuffle(parts)
         return " ".join(parts)
+
+
+class DiasporaPostFactory(PostFactory):
+    class Meta:
+        model = DiasporaPost

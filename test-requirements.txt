@@ -1,0 +1,5 @@
+pytest
+factory_boy
+codecov
+coverage
+pytest-cov

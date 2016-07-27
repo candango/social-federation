@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
+import warnings
+
 from base64 import b64encode
 import json
 import os
 from string import Template
 from jsonschema import validate
+from jsonschema.exceptions import ValidationError
 from xrd import XRD, Link, Element
 
 
@@ -72,7 +76,7 @@ class DiasporaHostMeta(BaseHostMeta):
         webfinger_host (str)
     """
     def __init__(self, *args, **kwargs):
-        super(DiasporaHostMeta, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         link = Link(
             rel='lrdd',
             type_='application/xrd+xml',
@@ -87,7 +91,7 @@ class BaseLegacyWebFinger(BaseHostMeta):
     See: https://code.google.com/p/webfinger/wiki/WebFingerProtocol
     """
     def __init__(self, address, *args, **kwargs):
-        super(BaseLegacyWebFinger, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         subject = Element("Subject", "acct:%s" % address)
         self.xrd.elements.append(subject)
 
@@ -102,7 +106,7 @@ class DiasporaWebFinger(BaseLegacyWebFinger):
         public_key (str)    - public key
     """
     def __init__(self, handle, host, guid, public_key, *args, **kwargs):
-        super(DiasporaWebFinger, self).__init__(handle, *args, **kwargs)
+        super().__init__(handle, *args, **kwargs)
         self.xrd.elements.append(Element("Alias", "%s/people/%s" % (
             host, guid
         )))
@@ -159,7 +163,7 @@ class DiasporaHCard(object):
     """
 
     required = [
-        "hostname", "fullname", "firstname", "lastname", "photo300", "photo100", "photo50", "searchable",
+        "hostname", "fullname", "firstname", "lastname", "photo300", "photo100", "photo50", "searchable", "guid", "public_key", "username",
     ]
 
     def __init__(self, **kwargs):
@@ -214,3 +218,74 @@ class SocialRelayWellKnown(object):
         with open(schema_path) as f:
             schema = json.load(f)
         validate(self.doc, schema)
+
+
+class NodeInfo(object):
+    """Generate a NodeInfo document.
+
+    See spec: http://nodeinfo.diaspora.software
+
+    NodeInfo is unnecessarely restrictive in field values. We wont be supporting such strictness, though
+    we will raise a warning unless validation is skipped with `skip_validate=True`.
+
+    For strictness, `raise_on_validate=True` will cause a `ValidationError` to be raised.
+
+    See schema document `federation/hostmeta/schemas/nodeinfo-1.0.json` for how to instantiate this class.
+    """
+
+    def __init__(self, software, protocols, services, open_registrations, usage, metadata, skip_validate=False,
+                 raise_on_validate=False):
+        self.doc = {
+            "version": "1.0",
+            "software": software,
+            "protocols": protocols,
+            "services": services,
+            "openRegistrations": open_registrations,
+            "usage": usage,
+            "metadata": metadata,
+        }
+        self.skip_validate = skip_validate
+        self.raise_on_validate = raise_on_validate
+
+    def render(self):
+        if not self.skip_validate:
+            self.validate_doc()
+        return json.dumps(self.doc)
+
+    def validate_doc(self):
+        schema_path = os.path.join(os.path.dirname(__file__), "schemas", "nodeinfo-1.0.json")
+        with open(schema_path) as f:
+            schema = json.load(f)
+        try:
+            validate(self.doc, schema)
+        except ValidationError:
+            if self.raise_on_validate:
+                raise
+            warnings.warn("NodeInfo document generated does not validate against NodeInfo 1.0 specification.")
+
+
+# The default NodeInfo document path
+NODEINFO_DOCUMENT_PATH = "/nodeinfo/1.0"
+
+
+def get_nodeinfo_well_known_document(url, document_path=None):
+    """Generate a NodeInfo .well-known document.
+
+    See spec: http://nodeinfo.diaspora.software
+
+    Args:
+        url (str) - The full base url with protocol, ie https://example.com
+        document_path (str) - Custom NodeInfo document path if supplied
+
+    :rtype: dict
+    """
+    return {
+        "links": [
+            {
+                "rel": "http://nodeinfo.diaspora.software/ns/schema/1.0",
+                "href": "{url}{path}".format(
+                    url=url, path=document_path or NODEINFO_DOCUMENT_PATH
+                )
+            }
+        ]
+    }
